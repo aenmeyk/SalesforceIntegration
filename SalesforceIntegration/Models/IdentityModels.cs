@@ -25,6 +25,8 @@ namespace SalesforceIntegration.Models
         {
         }
 
+        public DbSet<WebhookModel> WebhookModels { get; set; }
+
         public static ApplicationDbContext Create()
         {
             return new ApplicationDbContext();
