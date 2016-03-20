@@ -219,6 +219,7 @@
     <Compile Include="Models\ManageViewModels.cs" />
     <Compile Include="Models\WebhookModel.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="SalesforceClaims.cs" />
     <Compile Include="Startup.cs" />
   </ItemGroup>
   <ItemGroup>

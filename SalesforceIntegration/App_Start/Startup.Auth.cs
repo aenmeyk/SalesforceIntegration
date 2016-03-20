@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Configuration;
+using System.Security.Claims;
+using System.Threading.Tasks;
 using Microsoft.AspNet.Identity;
 using Microsoft.AspNet.Identity.Owin;
 using Microsoft.Owin;
@@ -56,7 +58,17 @@ namespace SalesforceIntegration
             {
                 ClientId = ConfigurationManager.AppSettings["ConsumerKey"],
                 ClientSecret = ConfigurationManager.AppSettings["ConsumerSecret"],
-                Endpoints = salesforceEndpoints
+                Endpoints = salesforceEndpoints,
+                Provider = new SalesforceAuthenticationProvider()
+                {
+                    OnAuthenticated = async context =>
+                    {
+                        context.Identity.AddClaim(new Claim(SalesforceClaims.AccessToken, context.AccessToken));
+                        context.Identity.AddClaim(new Claim(SalesforceClaims.InstanceUrl, context.InstanceUrl));
+
+                        await Task.FromResult(0);
+                    }
+                }
             };
 
             app.UseSalesforceAuthentication(options);
