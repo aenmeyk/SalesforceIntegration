@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
 using System.Net;
@@ -7,6 +6,7 @@ using SalesforceIntegration.Models;
 
 namespace SalesforceIntegration.Controllers
 {
+    [Authorize]
     public class WebhooksController : Controller
     {
         private ApplicationDbContext db = new ApplicationDbContext();
@@ -14,13 +14,7 @@ namespace SalesforceIntegration.Controllers
         // GET: Webhooks
         public ActionResult Index()
         {
-            var webhooks = new List<WebhookModel>();
-            webhooks.Add(new WebhookModel { Name = "Test 1", SObject = "Contact", Url = "http://localhost:5868/EventData" });
-            webhooks.Add(new WebhookModel { Name = "Test 2", SObject = "Opportunity", Url = "http://localhost:5868/EventData" });
-            webhooks.Add(new WebhookModel { Name = "Test 3", SObject = "Campaign", Url = "http://localhost:5868/EventData" });
-
-            return View(webhooks);
-            //return View(db.WebhookModels.ToList());
+            return View(db.WebhookModels.ToList());
         }
 
         // GET: Webhooks/Details/5
@@ -49,7 +43,7 @@ namespace SalesforceIntegration.Controllers
         // more details see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Create([Bind(Include = "Id,Name,SObject,Url")] WebhookModel webhookModel)
+        public ActionResult Create(WebhookModel webhookModel)
         {
             if (ModelState.IsValid)
             {
@@ -81,7 +75,7 @@ namespace SalesforceIntegration.Controllers
         // more details see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Edit([Bind(Include = "Id,Name,SObject,Url")] WebhookModel webhookModel)
+        public ActionResult Edit(WebhookModel webhookModel)
         {
             if (ModelState.IsValid)
             {
