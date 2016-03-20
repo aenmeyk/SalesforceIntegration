@@ -1,10 +1,11 @@
 ﻿using System;
+using System.Configuration;
 using Microsoft.AspNet.Identity;
 using Microsoft.AspNet.Identity.Owin;
 using Microsoft.Owin;
 using Microsoft.Owin.Security.Cookies;
-using Microsoft.Owin.Security.Google;
 using Owin;
+using Owin.Security.Providers.Salesforce;
 using SalesforceIntegration.Models;
 
 namespace SalesforceIntegration
@@ -45,24 +46,20 @@ namespace SalesforceIntegration
             // This is similar to the RememberMe option when you log in.
             app.UseTwoFactorRememberBrowserCookie(DefaultAuthenticationTypes.TwoFactorRememberBrowserCookie);
 
-            // Uncomment the following lines to enable logging in with third party login providers
-            //app.UseMicrosoftAccountAuthentication(
-            //    clientId: "",
-            //    clientSecret: "");
+            var salesforceEndpoints = new SalesforceAuthenticationOptions.SalesforceAuthenticationEndpoints
+            {
+                AuthorizationEndpoint = ConfigurationManager.AppSettings["AuthorizationEndpoint"],
+                TokenEndpoint = ConfigurationManager.AppSettings["TokenEndpoint"]
+            };
 
-            //app.UseTwitterAuthentication(
-            //   consumerKey: "",
-            //   consumerSecret: "");
+            var options = new SalesforceAuthenticationOptions
+            {
+                ClientId = ConfigurationManager.AppSettings["ConsumerKey"],
+                ClientSecret = ConfigurationManager.AppSettings["ConsumerSecret"],
+                Endpoints = salesforceEndpoints
+            };
 
-            //app.UseFacebookAuthentication(
-            //   appId: "",
-            //   appSecret: "");
-
-            //app.UseGoogleAuthentication(new GoogleOAuth2AuthenticationOptions()
-            //{
-            //    ClientId = "",
-            //    ClientSecret = ""
-            //});
+            app.UseSalesforceAuthentication(options);
         }
     }
 }
