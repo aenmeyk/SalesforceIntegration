@@ -30,7 +30,7 @@
             @Html.DisplayFor(modelItem => item.SObject)
         </td>
         <td>
-            @Html.ActionLink("Delete", "Delete", new { name=item.Name })
+            @Html.ActionLink("Delete", "Delete", item)
         </td>
     </tr>
 }

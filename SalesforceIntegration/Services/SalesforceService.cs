@@ -44,7 +44,7 @@ namespace SalesforceIntegration.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    throw new HttpException((int)response.StatusCode, "POST Request to Salesforce Failed!");
+                    throw new HttpException((int)response.StatusCode, "GET Failed!");
                 }
 
                 var content = await response.Content.ReadAsStringAsync();
@@ -57,7 +57,8 @@ namespace SalesforceIntegration.Services
                     var webhookModel = new WebhookModel
                     {
                         Name = record.Name,
-                        SObject = record.Body.ToString().Split(' ')[3]
+                        SObject = record.Body.ToString().Split(' ')[3],
+                        Location = record.attributes.url
                     };
 
                     webhookModels.Add(webhookModel);
@@ -72,6 +73,25 @@ namespace SalesforceIntegration.Services
             var salesforceRestUrl = await GetSalesforceRestUrl();
             await CreateWebhookClass(webhookModel, salesforceRestUrl);
             await CreateTrigger(webhookModel, salesforceRestUrl);
+        }
+
+        public async Task DeleteWebhook(WebhookModel webhookModel)
+        {
+            var salesforceRestUrl = await GetSalesforceRestUrl();
+            var salesforceRestUri = new Uri(salesforceRestUrl);
+            var authority = salesforceRestUri.GetLeftPart(UriPartial.Authority);
+            var url = authority + webhookModel.Location;
+
+            using (var httpClient = new HttpClient())
+            {
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _salesforceAccessToken);
+                var response = await httpClient.DeleteAsync(url);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new HttpException((int)response.StatusCode, "DELETE Failed!");
+                }
+            }
         }
 
         private async Task<string> GetSalesforceRestUrl()
@@ -151,7 +171,7 @@ namespace SalesforceIntegration.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    throw new HttpException((int)response.StatusCode, "POST Request to Salesforce Failed!");
+                    throw new HttpException((int)response.StatusCode, "POST Failed!");
                 }
             }
         }
