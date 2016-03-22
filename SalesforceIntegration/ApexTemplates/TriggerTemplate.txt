@@ -1,0 +1,5 @@
+﻿trigger ActionRelayTrigger@(Model.Name) on @Model.SObject (after insert,after update,after delete,after undelete) {
+    String url = '@Model.Url';
+    String content = ActionRelayWebhook.jsonContent(Trigger.new, Trigger.old);
+    ActionRelayWebhook.callout(url, content);
+}

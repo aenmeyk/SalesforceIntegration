@@ -15,6 +15,10 @@ using System.Security.Claims;
 using System.Web;
 using Microsoft.Owin.Security;
 using Newtonsoft.Json;
+using System.Reflection;
+using System.IO;
+using RazorEngine;
+using SalesforceIntegration.Services;
 
 namespace SalesforceIntegration.Controllers
 {
@@ -67,41 +71,8 @@ namespace SalesforceIntegration.Controllers
         {
             if (ModelState.IsValid)
             {
-                var accessToken = ((ClaimsIdentity)User.Identity).FindFirst(SalesforceClaims.AccessToken);
-                string userInfoContent;
-
-                using (var userInfoClient = new HttpClient())
-                {
-                    userInfoClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
-                    var userInfoResponse = await userInfoClient.GetAsync("https://login.salesforce.com/services/oauth2/userinfo");
-                    userInfoContent = await userInfoResponse.Content.ReadAsStringAsync();
-                }
-
-                dynamic jObject = JObject.Parse(userInfoContent);
-                var restUrlTemplate = jObject.urls.rest.Value;
-                var restUrl = restUrlTemplate.Replace("{version}", ApiVersion);
-                var apexClassUrl = restUrl + "tooling/sobjects/ApexClass";
-
-                var classBody = "public class Messages {\n"
-                   + "public string SayHello() {\n"
-                   + " return 'Hello';\n" + "}\n"
-                   + "}";
-
-                var apexClass = new ApexClass();
-                apexClass.ApiVersion = ApiVersion;
-                apexClass.Body = classBody;
-                apexClass.Name = webhookModel.Name;
-
-                var jsonApexClass = JsonConvert.SerializeObject(apexClass);
-                var content = new StringContent(jsonApexClass);
-                content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-
-                using (var httpClient = new HttpClient())
-                {
-                    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
-                    var response = await httpClient.PostAsync(apexClassUrl, content);
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                }
+                var salesforceService = new SalesforceService((ClaimsIdentity)User.Identity);
+                await salesforceService.CreateSalesforceObjects(webhookModel);
 
                 //db.WebhookModels.Add(webhookModel);
                 //db.SaveChanges();
