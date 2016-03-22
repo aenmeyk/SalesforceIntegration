@@ -1,23 +1,9 @@
+using System.Configuration;
 using System.Data.Entity;
-using System.Linq;
-using System.Net;
+using System.Security.Claims;
+using System.Threading.Tasks;
 using System.Web.Mvc;
 using SalesforceIntegration.Models;
-using Salesforce.Force;
-using System.Configuration;
-using System.Threading.Tasks;
-using Salesforce.Common;
-using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using Newtonsoft.Json.Linq;
-using System.Security.Claims;
-using System.Web;
-using Microsoft.Owin.Security;
-using Newtonsoft.Json;
-using System.Reflection;
-using System.IO;
-using RazorEngine;
 using SalesforceIntegration.Services;
 
 namespace SalesforceIntegration.Controllers
@@ -36,24 +22,12 @@ namespace SalesforceIntegration.Controllers
         private ApplicationDbContext db = new ApplicationDbContext();
 
         // GET: Webhooks
-        public ActionResult Index()
+        public async Task<ActionResult> Index()
         {
-            return View(db.WebhookModels.ToList());
-        }
+            var salesforceService = new SalesforceService((ClaimsIdentity)User.Identity);
+            var webhookModels = await salesforceService.GetWebhooks();
 
-        // GET: Webhooks/Details/5
-        public ActionResult Details(int? id)
-        {
-            if (id == null)
-            {
-                return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
-            }
-            WebhookModel webhookModel = db.WebhookModels.Find(id);
-            if (webhookModel == null)
-            {
-                return HttpNotFound();
-            }
-            return View(webhookModel);
+            return View(webhookModels);
         }
 
         // GET: Webhooks/Create
@@ -82,21 +56,6 @@ namespace SalesforceIntegration.Controllers
             return View(webhookModel);
         }
 
-        // GET: Webhooks/Edit/5
-        public ActionResult Edit(int? id)
-        {
-            if (id == null)
-            {
-                return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
-            }
-            WebhookModel webhookModel = db.WebhookModels.Find(id);
-            if (webhookModel == null)
-            {
-                return HttpNotFound();
-            }
-            return View(webhookModel);
-        }
-
         // POST: Webhooks/Edit/5
         // To protect from overposting attacks, please enable the specific properties you want to bind to, for 
         // more details see http://go.microsoft.com/fwlink/?LinkId=317598.
@@ -114,28 +73,30 @@ namespace SalesforceIntegration.Controllers
         }
 
         // GET: Webhooks/Delete/5
-        public ActionResult Delete(int? id)
+        public ActionResult Delete(string name)
         {
-            if (id == null)
-            {
-                return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
-            }
-            WebhookModel webhookModel = db.WebhookModels.Find(id);
-            if (webhookModel == null)
-            {
-                return HttpNotFound();
-            }
-            return View(webhookModel);
+            //if (id == null)
+            //{
+            //    return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
+            //}
+            //WebhookModel webhookModel = db.WebhookModels.Find(id);
+            //if (webhookModel == null)
+            //{
+            //    return HttpNotFound();
+            //}
+            //return View(webhookModel);
+
+            return View();
         }
 
         // POST: Webhooks/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
-        public ActionResult DeleteConfirmed(int id)
+        public ActionResult DeleteConfirmed(string name)
         {
-            WebhookModel webhookModel = db.WebhookModels.Find(id);
-            db.WebhookModels.Remove(webhookModel);
-            db.SaveChanges();
+            //WebhookModel webhookModel = db.WebhookModels.Find(id);
+            //db.WebhookModels.Remove(webhookModel);
+            //db.SaveChanges();
             return RedirectToAction("Index");
         }
 

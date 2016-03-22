@@ -1,4 +1,7 @@
-﻿using System.Configuration;
+﻿using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Configuration;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -22,6 +25,46 @@ namespace SalesforceIntegration.Services
         {
             var accessToken = user.FindFirst(SalesforceClaims.AccessToken);
             _salesforceAccessToken = accessToken.Value;
+        }
+
+        public async Task<IEnumerable<WebhookModel>> GetWebhooks()
+        {
+            var salesforceRestUrl = await GetSalesforceRestUrl();
+            var builder = new UriBuilder(salesforceRestUrl + "tooling/query");
+            builder.Port = -1;
+            var query = HttpUtility.ParseQueryString(builder.Query);
+            query["q"] = "SELECT Name, Body FROM ApexTrigger WHERE Name LIKE 'ActionRelayTrigger%'";
+            builder.Query = query.ToString();
+            var url = builder.ToString();
+
+            using (var httpClient = new HttpClient())
+            {
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _salesforceAccessToken);
+                var response = await httpClient.GetAsync(url);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new HttpException((int)response.StatusCode, "POST Request to Salesforce Failed!");
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                dynamic jObject = JObject.Parse(content);
+                var records = jObject.records;
+                var webhookModels = new Collection<WebhookModel>();
+
+                foreach (dynamic record in records)
+                {
+                    var webhookModel = new WebhookModel
+                    {
+                        Name = record.Name,
+                        SObject = record.Body.ToString().Split(' ')[3]
+                    };
+
+                    webhookModels.Add(webhookModel);
+                }
+
+                return webhookModels;
+            }
         }
 
         public async Task CreateSalesforceObjects(WebhookModel webhookModel)

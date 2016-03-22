@@ -265,8 +265,6 @@
     <Content Include="Scripts\_references.js" />
     <Content Include="Views\Webhooks\Create.cshtml" />
     <Content Include="Views\Webhooks\Delete.cshtml" />
-    <Content Include="Views\Webhooks\Details.cshtml" />
-    <Content Include="Views\Webhooks\Edit.cshtml" />
     <Content Include="Views\Webhooks\Index.cshtml" />
     <Content Include="Web.config" />
     <Content Include="Web.Debug.config">
