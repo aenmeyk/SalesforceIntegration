@@ -367,7 +367,15 @@ namespace SalesforceIntegration.Controllers
                 {
                     return View("ExternalLoginFailure");
                 }
-                var user = new ApplicationUser { UserName = model.Email, Email = model.Email };
+
+                var user = new ApplicationUser {
+                    UserName = model.Email,
+                    Email = model.Email,
+                    SalesforceAccessToken = info.ExternalIdentity.FindFirst(SalesforceClaims.AccessToken).Value,
+                    SalesforceRefreshToken = info.ExternalIdentity.FindFirst(SalesforceClaims.RefreshToken).Value,
+                    SalesforceInstanceUrl = info.ExternalIdentity.FindFirst(SalesforceClaims.InstanceUrl).Value
+                };
+
                 var result = await UserManager.CreateAsync(user);
                 if (result.Succeeded)
                 {
