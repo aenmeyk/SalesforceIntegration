@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Configuration;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
@@ -12,6 +13,8 @@ using System.Web;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RazorEngine;
+using Salesforce.Common;
+using Salesforce.Force;
 using SalesforceIntegration.Models;
 
 namespace SalesforceIntegration.Services
@@ -19,12 +22,40 @@ namespace SalesforceIntegration.Services
     public class SalesforceService
     {
         private string _apiVersion = ConfigurationManager.AppSettings["ApiVersion"];
-        private string _salesforceAccessToken;
+        private string _accessToken;
+        private string _instanceUrl;
 
         public SalesforceService(ClaimsIdentity user)
         {
-            var accessToken = user.FindFirst(SalesforceClaims.AccessToken);
-            _salesforceAccessToken = accessToken.Value;
+            _accessToken = user.FindFirst(SalesforceClaims.AccessToken).Value;
+            _instanceUrl = user.FindFirst(SalesforceClaims.InstanceUrl).Value;
+        }
+
+        public async Task<IEnumerable<SalesforceContact>> GetContacts()
+        {
+            var client = new ForceClient(_instanceUrl, _accessToken, "v" + _apiVersion);
+            var contactsResult = await client.QueryAsync<SalesforceContact>("SELECT Id, FirstName, LastName, Email FROM Contact");
+
+            return contactsResult.Records;
+        }
+
+        public async Task UpdateContact(SalesforceContact contact)
+        {
+            var updatedContact = new
+            {
+                FirstName = contact.FirstName,
+                LastName = contact.LastName,
+                Email = contact.Email,
+                Phone = contact.Phone,
+            };
+
+            var client = new ForceClient(_instanceUrl, _accessToken, "v" + _apiVersion);
+            var success = await client.UpdateAsync("Contact", contact.Id, updatedContact);
+
+            if (!success.Success)
+            {
+                throw new HttpException((int)HttpStatusCode.InternalServerError, "Update Failed!");
+            }
         }
 
         public async Task<IEnumerable<WebhookModel>> GetWebhooks()
@@ -39,7 +70,7 @@ namespace SalesforceIntegration.Services
 
             using (var httpClient = new HttpClient())
             {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _salesforceAccessToken);
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
                 var response = await httpClient.GetAsync(url);
 
                 if (!response.IsSuccessStatusCode)
@@ -84,7 +115,7 @@ namespace SalesforceIntegration.Services
 
             using (var httpClient = new HttpClient())
             {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _salesforceAccessToken);
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
                 var response = await httpClient.DeleteAsync(url);
 
                 if (!response.IsSuccessStatusCode)
@@ -96,16 +127,32 @@ namespace SalesforceIntegration.Services
 
         private async Task<string> GetSalesforceRestUrl()
         {
+            dynamic userInfo = await GetSalesforceUserInfo();
+            var restUrlTemplate = userInfo.urls.rest.Value;
+            var salesforceRestUrl = restUrlTemplate.Replace("{version}", _apiVersion);
+
+            return salesforceRestUrl;
+        }
+
+        private async Task<string> GetSalesforceSObjectsUrl()
+        {
+            dynamic userInfo = await GetSalesforceUserInfo();
+            var restUrlTemplate = userInfo.urls.sobjects.Value;
+            var salesforceSObjectsUrl = restUrlTemplate.Replace("{version}", _apiVersion);
+
+            return salesforceSObjectsUrl;
+        }
+
+        private async Task<JObject> GetSalesforceUserInfo()
+        {
             using (var httpClient = new HttpClient())
             {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _salesforceAccessToken);
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
                 var userInfoResponse = await httpClient.GetAsync("https://login.salesforce.com/services/oauth2/userinfo");
                 var content = await userInfoResponse.Content.ReadAsStringAsync();
-                dynamic jObject = JObject.Parse(content);
-                var restUrlTemplate = jObject.urls.rest.Value;
-                var salesforceRestUrl = restUrlTemplate.Replace("{version}", _apiVersion);
+                var userInfo = JObject.Parse(content);
 
-                return salesforceRestUrl;
+                return userInfo;
             }
         }
 
@@ -166,7 +213,7 @@ namespace SalesforceIntegration.Services
 
             using (var httpClient = new HttpClient())
             {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _salesforceAccessToken);
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
                 var response = await httpClient.PostAsync(url, content);
 
                 if (!response.IsSuccessStatusCode)

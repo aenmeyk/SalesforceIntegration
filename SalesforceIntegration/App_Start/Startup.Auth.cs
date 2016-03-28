@@ -64,6 +64,7 @@ namespace SalesforceIntegration
                     OnAuthenticated = async context =>
                     {
                         context.Identity.AddClaim(new Claim(SalesforceClaims.AccessToken, context.AccessToken));
+                        context.Identity.AddClaim(new Claim(SalesforceClaims.RefreshToken, context.RefreshToken));
                         context.Identity.AddClaim(new Claim(SalesforceClaims.InstanceUrl, context.InstanceUrl));
 
                         await Task.FromResult(0);
