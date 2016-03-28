@@ -1,19 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Configuration;
 using System.IO;
+using System.Linq;
 using System.Net;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Reflection;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using RazorEngine;
 using Salesforce.Common;
+using Salesforce.Common.Models;
 using Salesforce.Force;
 using SalesforceIntegration.Models;
 
@@ -21,25 +18,29 @@ namespace SalesforceIntegration.Services
 {
     public class SalesforceService
     {
+        private string _clientId = ConfigurationManager.AppSettings["ConsumerKey"];
         private string _apiVersion = ConfigurationManager.AppSettings["ApiVersion"];
         private string _accessToken;
+        private string _refreshToken;
         private string _instanceUrl;
 
         public SalesforceService(ClaimsIdentity user)
         {
             _accessToken = user.FindFirst(SalesforceClaims.AccessToken).Value;
+            _refreshToken = user.FindFirst(SalesforceClaims.RefreshToken).Value;
             _instanceUrl = user.FindFirst(SalesforceClaims.InstanceUrl).Value;
         }
 
-        public async Task<IEnumerable<SalesforceContact>> GetContacts()
+        public async Task<IEnumerable<SalesforceContact>> GetContactsAsync()
         {
-            var client = new ForceClient(_instanceUrl, _accessToken, "v" + _apiVersion);
-            var contactsResult = await client.QueryAsync<SalesforceContact>("SELECT Id, FirstName, LastName, Email FROM Contact");
-
-            return contactsResult.Records;
+            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
+            {
+                var contactsResult = await client.QueryAsync<SalesforceContact>("SELECT Id, FirstName, LastName, Email FROM Contact");
+                return contactsResult.Records;
+            }
         }
 
-        public async Task UpdateContact(SalesforceContact contact)
+        public async Task UpdateContactAsync(SalesforceContact contact)
         {
             var updatedContact = new
             {
@@ -49,142 +50,117 @@ namespace SalesforceIntegration.Services
                 Phone = contact.Phone,
             };
 
-            var client = new ForceClient(_instanceUrl, _accessToken, "v" + _apiVersion);
-            var success = await client.UpdateAsync("Contact", contact.Id, updatedContact);
-
-            if (!success.Success)
+            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
             {
-                throw new HttpException((int)HttpStatusCode.InternalServerError, "Update Failed!");
-            }
-        }
+                var success = await client.UpdateAsync("Contact", contact.Id, updatedContact);
 
-        public async Task<IEnumerable<WebhookModel>> GetWebhooks()
-        {
-            var salesforceRestUrl = await GetSalesforceRestUrl();
-            var builder = new UriBuilder(salesforceRestUrl + "tooling/query");
-            builder.Port = -1;
-            var query = HttpUtility.ParseQueryString(builder.Query);
-            query["q"] = "SELECT Name, Body FROM ApexTrigger WHERE Name LIKE 'ActionRelayTrigger%'";
-            builder.Query = query.ToString();
-            var url = builder.ToString();
-
-            using (var httpClient = new HttpClient())
-            {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-                var response = await httpClient.GetAsync(url);
-
-                if (!response.IsSuccessStatusCode)
+                if (!success.Success)
                 {
-                    throw new HttpException((int)response.StatusCode, "GET Failed!");
-                }
-
-                var content = await response.Content.ReadAsStringAsync();
-                dynamic jObject = JObject.Parse(content);
-                var records = jObject.records;
-                var webhookModels = new Collection<WebhookModel>();
-
-                foreach (dynamic record in records)
-                {
-                    var webhookModel = new WebhookModel
-                    {
-                        Name = record.Name,
-                        SObject = record.Body.ToString().Split(' ')[3],
-                        Location = record.attributes.url
-                    };
-
-                    webhookModels.Add(webhookModel);
-                }
-
-                return webhookModels;
-            }
-        }
-
-        public async Task CreateSalesforceObjects(WebhookModel webhookModel)
-        {
-            var salesforceRestUrl = await GetSalesforceRestUrl();
-            await CreateWebhookClass(webhookModel, salesforceRestUrl);
-            await CreateTrigger(webhookModel, salesforceRestUrl);
-        }
-
-        public async Task DeleteWebhook(WebhookModel webhookModel)
-        {
-            var salesforceRestUrl = await GetSalesforceRestUrl();
-            var salesforceRestUri = new Uri(salesforceRestUrl);
-            var authority = salesforceRestUri.GetLeftPart(UriPartial.Authority);
-            var url = authority + webhookModel.Location;
-
-            using (var httpClient = new HttpClient())
-            {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-                var response = await httpClient.DeleteAsync(url);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    throw new HttpException((int)response.StatusCode, "DELETE Failed!");
+                    throw new HttpException((int)HttpStatusCode.InternalServerError, "Update Failed!");
                 }
             }
         }
 
-        private async Task<string> GetSalesforceRestUrl()
+        public async Task<IEnumerable<WebhookModel>> GetWebhooksAsync()
         {
-            dynamic userInfo = await GetSalesforceUserInfo();
-            var restUrlTemplate = userInfo.urls.rest.Value;
-            var salesforceRestUrl = restUrlTemplate.Replace("{version}", _apiVersion);
+            var webhookModels = new Collection<WebhookModel>();
+            QueryResult<ApexTrigger> apexTrigger;
 
-            return salesforceRestUrl;
-        }
-
-        private async Task<string> GetSalesforceSObjectsUrl()
-        {
-            dynamic userInfo = await GetSalesforceUserInfo();
-            var restUrlTemplate = userInfo.urls.sobjects.Value;
-            var salesforceSObjectsUrl = restUrlTemplate.Replace("{version}", _apiVersion);
-
-            return salesforceSObjectsUrl;
-        }
-
-        private async Task<JObject> GetSalesforceUserInfo()
-        {
-            using (var httpClient = new HttpClient())
+            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
             {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-                var userInfoResponse = await httpClient.GetAsync("https://login.salesforce.com/services/oauth2/userinfo");
-                var content = await userInfoResponse.Content.ReadAsStringAsync();
-                var userInfo = JObject.Parse(content);
+                apexTrigger = await client.QueryAsync<ApexTrigger>("SELECT Id, Name, Body FROM ApexTrigger WHERE Name LIKE 'ActionRelayTrigger%'");
+            }
 
-                return userInfo;
+            foreach (ApexTrigger record in apexTrigger.Records)
+            {
+                var webhookModel = new WebhookModel
+                {
+                    Id = record.Id,
+                    Name = record.Name.ToString().Replace("ActionRelayTrigger", string.Empty),
+                    SObject = record.Body.ToString().Split(' ')[3]
+                };
+
+                webhookModels.Add(webhookModel);
+            }
+
+            return webhookModels;
+        }
+
+        public async Task CreateSalesforceObjectsAsync(WebhookModel webhookModel)
+        {
+            await CreateWebhookClassAsync(webhookModel);
+            await CreateTriggerAsync(webhookModel);
+        }
+
+        public async Task DeleteWebhookAsync(WebhookModel webhookModel)
+        {
+            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
+            {
+                var success = await client.DeleteAsync("ApexTrigger", webhookModel.Id);
+
+                if (!success)
+                {
+                    throw new HttpException((int)HttpStatusCode.InternalServerError, "Delete Failed!");
+                }
             }
         }
 
-        private async Task CreateTrigger(WebhookModel webhookModel, string salesforceRestUrl)
+        public async Task<string> GetNewAccessTokenAsync(WebhookModel webhookModel)
         {
-            var classBody = GetApexCode("SalesforceIntegration.ApexTemplates.TriggerTemplate.txt", webhookModel);
+            var auth = new AuthenticationClient();
+            await auth.TokenRefreshAsync(_clientId, _refreshToken);
+
+            return auth.AccessToken;
+        }
+
+        private async Task CreateTriggerAsync(WebhookModel webhookModel)
+        {
+            var triggerBody = GetApexCode("SalesforceIntegration.ApexTemplates.TriggerTemplate.txt", webhookModel);
 
             var apexTrigger = new ApexTrigger
             {
-                ApiVersion = _apiVersion,
-                Body = classBody,
+                ApiVersion = _apiVersion.TrimStart('v'),
+                Body = triggerBody,
                 Name = "ActionRelayTrigger" + webhookModel.Name,
                 TableEnumOrId = webhookModel.SObject
             };
 
-            var url = salesforceRestUrl + "tooling/sobjects/ApexTrigger";
-            await PostApexObject(url, apexTrigger);
+            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
+            {
+                var success = await client.CreateAsync("ApexTrigger", apexTrigger);
+
+                if (!success.Success)
+                {
+                    throw new HttpException((int)HttpStatusCode.InternalServerError, "Create Failed!");
+                }
+            }
         }
 
-        private async Task CreateWebhookClass(WebhookModel webhookModel, string salesforceRestUrl)
+        private async Task CreateWebhookClassAsync(WebhookModel webhookModel)
         {
-            var classBody = GetApexCode("SalesforceIntegration.ApexTemplates.WebhookTemplate.txt");
-
-            var apexClass = new ApexClass
+            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
             {
-                ApiVersion = _apiVersion,
-                Body = classBody,
-                Name = "ActionRelayWebhook"
-            };
+                var existingWebhookClass = await client.QueryAsync<ApexClass>("SELECT Id FROM ApexClass WHERE Name = 'ActionRelayWebhook'");
 
-            var url = salesforceRestUrl + "tooling/sobjects/ApexClass";
-            await PostApexObject(url, apexClass);
+                if (!existingWebhookClass.Records.Any())
+                {
+                    var classBody = GetApexCode("SalesforceIntegration.ApexTemplates.WebhookTemplate.txt");
+
+                    var apexClass = new ApexClass
+                    {
+                        ApiVersion = _apiVersion.TrimStart('v'),
+                        Body = classBody,
+                        Name = "ActionRelayWebhook"
+                    };
+
+                    var success = await client.CreateAsync("ApexClass", apexClass);
+
+                    if (!success.Success)
+                    {
+                        throw new HttpException((int)HttpStatusCode.InternalServerError, "Create Failed!");
+                    }
+                }
+            }
         }
 
         private string GetApexCode(string templateName, object model = null)
@@ -202,24 +178,6 @@ namespace SalesforceIntegration.Services
                 }
 
                 return template;
-            }
-        }
-
-        private async Task PostApexObject(string url, object apexObject)
-        {
-            var jsonApexObject = JsonConvert.SerializeObject(apexObject);
-            var content = new StringContent(jsonApexObject);
-            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-
-            using (var httpClient = new HttpClient())
-            {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-                var response = await httpClient.PostAsync(url, content);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    throw new HttpException((int)response.StatusCode, "POST Failed!");
-                }
             }
         }
     }

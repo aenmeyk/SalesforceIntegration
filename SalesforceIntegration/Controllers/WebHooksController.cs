@@ -12,7 +12,7 @@ namespace SalesforceIntegration.Controllers
         public async Task<ActionResult> Index()
         {
             var salesforceService = new SalesforceService((ClaimsIdentity)User.Identity);
-            var webhookModels = await salesforceService.GetWebhooks();
+            var webhookModels = await salesforceService.GetWebhooksAsync();
 
             return View(webhookModels);
         }
@@ -29,7 +29,7 @@ namespace SalesforceIntegration.Controllers
             if (ModelState.IsValid)
             {
                 var salesforceService = new SalesforceService((ClaimsIdentity)User.Identity);
-                await salesforceService.CreateSalesforceObjects(webhookModel);
+                await salesforceService.CreateSalesforceObjectsAsync(webhookModel);
 
                 return RedirectToAction("Index");
             }
@@ -47,7 +47,7 @@ namespace SalesforceIntegration.Controllers
         public async Task<ActionResult> DeleteConfirmed(WebhookModel webhookModel)
         {
             var salesforceService = new SalesforceService((ClaimsIdentity)User.Identity);
-            await salesforceService.DeleteWebhook(webhookModel);
+            await salesforceService.DeleteWebhookAsync(webhookModel);
 
             return RedirectToAction("Index");
         }

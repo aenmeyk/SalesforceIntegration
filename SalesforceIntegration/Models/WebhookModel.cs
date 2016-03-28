@@ -4,6 +4,8 @@ namespace SalesforceIntegration.Models
 {
     public class WebhookModel
     {
+        public string Id { get; set; }
+
         [Required]
         public string Name { get; set; }
 
@@ -12,7 +14,5 @@ namespace SalesforceIntegration.Models
 
         [Required]
         public string Url { get; set; }
-
-        public string Location { get; set; }
     }
 }

@@ -13,7 +13,7 @@ namespace SalesforceIntegration.Controllers
         public async Task<ActionResult> Index()
         {
             var salesforceService = new SalesforceService((ClaimsIdentity)User.Identity);
-            var contacts = await salesforceService.GetContacts();
+            var contacts = await salesforceService.GetContactsAsync();
 
             return View(contacts);
         }
@@ -31,7 +31,7 @@ namespace SalesforceIntegration.Controllers
             if (ModelState.IsValid)
             {
                 var salesforceService = new SalesforceService((ClaimsIdentity)User.Identity);
-                await salesforceService.UpdateContact(contact);
+                await salesforceService.UpdateContactAsync(contact);
 
                 return RedirectToAction("Index");
             }
