@@ -88,7 +88,7 @@ namespace SalesforceIntegration.Services
 
             await GetClientWithRefresh(async client =>
             {
-                var contactsResult = await client.QueryAsync<SalesforceContact>("SELECT Id, FirstName, LastName, Email FROM Contact");
+                var contactsResult = await client.QueryAsync<SalesforceContact>("SELECT Id, FirstName, LastName, Email, Phone FROM Contact");
                 contacts = contactsResult.Records;
             });
 
