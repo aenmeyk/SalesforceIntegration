@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Configuration;
 using System.IO;
@@ -23,55 +24,75 @@ namespace SalesforceIntegration.Services
     {
         private string _clientId = ConfigurationManager.AppSettings["ConsumerKey"];
         private string _apiVersion = ConfigurationManager.AppSettings["ApiVersion"];
-        private string _accessToken;
-        private string _refreshToken;
-        private string _instanceUrl;
+        private ClaimsPrincipal _user;
+        private ApplicationSignInManager _signInManager;
 
-        public SalesforceService(ClaimsIdentity user)
+        private string AccessToken
         {
-            // Get the values from the user's claims. These claims are set on the user in the ApplicationUser.GenerateUserIdentityAsync method.
-            _accessToken = user.FindFirst(SalesforceClaims.AccessToken).Value;
-            _refreshToken = user.FindFirst(SalesforceClaims.RefreshToken).Value;
-            _instanceUrl = user.FindFirst(SalesforceClaims.InstanceUrl).Value;
+            get { return _user.FindFirst(SalesforceClaims.AccessToken).Value; }
+        }
+
+        private string RefreshToken
+        {
+            get { return _user.FindFirst(SalesforceClaims.RefreshToken).Value; }
+        }
+
+        private string InstanceUrl
+        {
+            get { return _user.FindFirst(SalesforceClaims.InstanceUrl).Value; }
+        }
+
+        public SalesforceService(ClaimsPrincipal user, ApplicationSignInManager signInManager)
+        {
+            _user = user;
+            _signInManager = signInManager;
         }
 
         /// <summary>
-        /// Demonstrates using the refresh token to get a new access token if the access token has expired.
+        /// Demonstrates using the refresh token to get a new access token if the current access token has expired.
         /// </summary>
-        public async Task<IEnumerable<SalesforceContact>> GetContactsAsync()
+        private async Task GetClientWithRefresh(Func<ForceClient, Task> useClient)
         {
             try
             {
-                // 1) First try with an expired token
-                return await GetContactsAsync(accessToken: "This is an expired token.");
+                await ExecuteClient(useClient);
             }
             catch (ForceException ex)
             {
-                // 2) This will throw a ForceException with the message below
                 if (ex.Message == "Session expired or invalid")
                 {
-                    // 3) Get a new access token with the refresh token
-                    var auth = new AuthenticationClient();
-                    await auth.TokenRefreshAsync(_clientId, _refreshToken);
-
-                    // 4) Try again with the new access token
-                    return await GetContactsAsync(auth.AccessToken);
+                    await RefreshAccessTokenAsync();
+                    await ExecuteClient(useClient);
                 }
+                else
+                {
+                    throw;
+                }
+            }
+        }
 
-                throw;
+        private async Task ExecuteClient(Func<ForceClient, Task> useClient)
+        {
+            using (var client = new ForceClient(InstanceUrl, AccessToken, _apiVersion))
+            {
+                await useClient(client);
             }
         }
 
         /// <summary>
         /// Demonstrates retrieving data from a client's Salesforce instance using an access token.
         /// </summary>
-        public async Task<IEnumerable<SalesforceContact>> GetContactsAsync(string accessToken)
+        public async Task<IEnumerable<SalesforceContact>> GetContactsAsync()
         {
-            using (var client = new ForceClient(_instanceUrl, accessToken, _apiVersion))
+            IEnumerable<SalesforceContact> contacts = null;
+
+            await GetClientWithRefresh(async client =>
             {
                 var contactsResult = await client.QueryAsync<SalesforceContact>("SELECT Id, FirstName, LastName, Email FROM Contact");
-                return contactsResult.Records;
-            }
+                contacts = contactsResult.Records;
+            });
+
+            return contacts;
         }
 
         /// <summary>
@@ -87,7 +108,7 @@ namespace SalesforceIntegration.Services
                 Phone = contact.Phone,
             };
 
-            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
+            await GetClientWithRefresh(async client =>
             {
                 var success = await client.UpdateAsync("Contact", contact.Id, updatedContact);
 
@@ -95,7 +116,7 @@ namespace SalesforceIntegration.Services
                 {
                     throw new HttpException((int)HttpStatusCode.InternalServerError, "Update Failed!");
                 }
-            }
+            });
         }
 
         /// <summary>
@@ -104,12 +125,12 @@ namespace SalesforceIntegration.Services
         public async Task<IEnumerable<WebhookModel>> GetWebhooksAsync()
         {
             var webhookModels = new Collection<WebhookModel>();
-            QueryResult<ApexTrigger> apexTrigger;
+            QueryResult<ApexTrigger> apexTrigger = null;
 
-            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
+            await GetClientWithRefresh(async client =>
             {
                 apexTrigger = await client.QueryAsync<ApexTrigger>("SELECT Id, Name, Body FROM ApexTrigger WHERE Name LIKE 'ActionRelayTrigger%'");
-            }
+            });
 
             foreach (ApexTrigger record in apexTrigger.Records)
             {
@@ -128,8 +149,11 @@ namespace SalesforceIntegration.Services
 
         public async Task CreateSalesforceObjectsAsync(WebhookModel webhookModel)
         {
-            await CreateWebhookClassAsync(webhookModel);
-            await CreateTriggerAsync(webhookModel);
+            await GetClientWithRefresh(async client =>
+            {
+                await CreateWebhookClassAsync(webhookModel, client);
+                await CreateTriggerAsync(webhookModel, client);
+            });
         }
 
         /// <summary>
@@ -137,7 +161,7 @@ namespace SalesforceIntegration.Services
         /// </summary>
         public async Task DeleteWebhookAsync(WebhookModel webhookModel)
         {
-            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
+            await GetClientWithRefresh(async client =>
             {
                 var success = await client.DeleteAsync("ApexTrigger", webhookModel.Id);
 
@@ -145,13 +169,38 @@ namespace SalesforceIntegration.Services
                 {
                     throw new HttpException((int)HttpStatusCode.InternalServerError, "Delete Failed!");
                 }
-            }
+            });
+        }
+
+        private async Task RefreshAccessTokenAsync()
+        {
+            // Refresh the token
+            var auth = new AuthenticationClient();
+            await auth.TokenRefreshAsync(_clientId, RefreshToken);
+
+            // Get the current user ID
+            var identity = (ClaimsIdentity)_user.Identity;
+            var userId = identity.FindFirst(ClaimTypes.NameIdentifier).Value;
+
+            // Remove the current AccessToken claim
+            var currentClaims = await _signInManager.UserManager.GetClaimsAsync(userId);
+            var currentClaim = currentClaims.Single(x => x.Type == SalesforceClaims.AccessToken);
+            await _signInManager.UserManager.RemoveClaimAsync(userId, currentClaim);
+            currentClaim = identity.FindFirst(SalesforceClaims.AccessToken);
+            identity.RemoveClaim(currentClaim);
+
+            // Add the new AccessToken claim
+            var newClaim = new Claim(SalesforceClaims.AccessToken, auth.AccessToken);
+            await _signInManager.UserManager.AddClaimAsync(userId, newClaim);
+            identity.AddClaim(newClaim);
+            var user = await _signInManager.UserManager.FindByIdAsync(userId);
+            await _signInManager.SignInAsync(user, isPersistent: false, rememberBrowser: false);
         }
 
         /// <summary>
         /// Demonstrates creating an Apex trigger in a client's Salesforce instance.
         /// </summary>
-        private async Task CreateTriggerAsync(WebhookModel webhookModel)
+        private async Task CreateTriggerAsync(WebhookModel webhookModel, ForceClient client)
         {
             var triggerBody = GetApexCode("SalesforceIntegration.ApexTemplates.TriggerTemplate.txt", webhookModel);
 
@@ -163,45 +212,39 @@ namespace SalesforceIntegration.Services
                 TableEnumOrId = webhookModel.SObject
             };
 
-            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
-            {
-                var success = await client.CreateAsync("ApexTrigger", apexTrigger);
+            var success = await client.CreateAsync("ApexTrigger", apexTrigger);
 
-                if (!success.Success)
-                {
-                    throw new HttpException((int)HttpStatusCode.InternalServerError, "Create Failed!");
-                }
+            if (!success.Success)
+            {
+                throw new HttpException((int)HttpStatusCode.InternalServerError, "Create Failed!");
             }
         }
 
         /// <summary>
         /// Demonstrates creating an Apex class in a client's Salesforce instance.
         /// </summary>
-        private async Task CreateWebhookClassAsync(WebhookModel webhookModel)
+        private async Task CreateWebhookClassAsync(WebhookModel webhookModel, ForceClient client)
         {
-            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
+            // First check if a class with this name already exists
+            var existingWebhookClass = await client.QueryAsync<ApexClass>("SELECT Id FROM ApexClass WHERE Name = 'ActionRelayWebhook'");
+
+            // If the class does not exist
+            if (!existingWebhookClass.Records.Any())
             {
-                // First check if a class with this name already exists
-                var existingWebhookClass = await client.QueryAsync<ApexClass>("SELECT Id FROM ApexClass WHERE Name = 'ActionRelayWebhook'");
+                var classBody = GetApexCode("SalesforceIntegration.ApexTemplates.WebhookTemplate.txt");
 
-                // If the class does not exist
-                if (!existingWebhookClass.Records.Any())
+                var apexClass = new ApexClass
                 {
-                    var classBody = GetApexCode("SalesforceIntegration.ApexTemplates.WebhookTemplate.txt");
+                    ApiVersion = _apiVersion.TrimStart('v'),
+                    Body = classBody,
+                    Name = "ActionRelayWebhook"
+                };
 
-                    var apexClass = new ApexClass
-                    {
-                        ApiVersion = _apiVersion.TrimStart('v'),
-                        Body = classBody,
-                        Name = "ActionRelayWebhook"
-                    };
+                var success = await client.CreateAsync("ApexClass", apexClass);
 
-                    var success = await client.CreateAsync("ApexClass", apexClass);
-
-                    if (!success.Success)
-                    {
-                        throw new HttpException((int)HttpStatusCode.InternalServerError, "Create Failed!");
-                    }
+                if (!success.Success)
+                {
+                    throw new HttpException((int)HttpStatusCode.InternalServerError, "Create Failed!");
                 }
             }
         }
