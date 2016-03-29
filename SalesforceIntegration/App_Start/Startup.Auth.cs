@@ -63,6 +63,7 @@ namespace SalesforceIntegration
                 {
                     OnAuthenticated = async context =>
                     {
+                        // When the user authenticates with Salesforce, get the values that we will need later to interact with their instance.
                         context.Identity.AddClaim(new Claim(SalesforceClaims.AccessToken, context.AccessToken));
                         context.Identity.AddClaim(new Claim(SalesforceClaims.RefreshToken, context.RefreshToken));
                         context.Identity.AddClaim(new Claim(SalesforceClaims.InstanceUrl, context.InstanceUrl));

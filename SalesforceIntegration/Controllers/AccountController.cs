@@ -370,19 +370,21 @@ namespace SalesforceIntegration.Controllers
 
                 var user = new ApplicationUser {
                     UserName = model.Email,
-                    Email = model.Email,
-                    SalesforceAccessToken = info.ExternalIdentity.FindFirst(SalesforceClaims.AccessToken).Value,
-                    SalesforceRefreshToken = info.ExternalIdentity.FindFirst(SalesforceClaims.RefreshToken).Value,
-                    SalesforceInstanceUrl = info.ExternalIdentity.FindFirst(SalesforceClaims.InstanceUrl).Value
+                    Email = model.Email
                 };
 
                 var result = await UserManager.CreateAsync(user);
+
                 if (result.Succeeded)
                 {
                     result = await UserManager.AddLoginAsync(user.Id, info.Login);
                     if (result.Succeeded)
                     {
+                        await UserManager.AddClaimAsync(user.Id, info.ExternalIdentity.FindFirst(SalesforceClaims.AccessToken));
+                        await UserManager.AddClaimAsync(user.Id, info.ExternalIdentity.FindFirst(SalesforceClaims.RefreshToken));
+                        await UserManager.AddClaimAsync(user.Id, info.ExternalIdentity.FindFirst(SalesforceClaims.InstanceUrl));
                         await SignInManager.SignInAsync(user, isPersistent: false, rememberBrowser: false);
+
                         return RedirectToLocal(returnUrl);
                     }
                 }

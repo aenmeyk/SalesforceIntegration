@@ -16,6 +16,9 @@ using SalesforceIntegration.Models;
 
 namespace SalesforceIntegration.Services
 {
+    /// <summary>
+    /// Contains some POC methods to demonstrate various interactions with Salesforce.
+    /// </summary>
     public class SalesforceService
     {
         private string _clientId = ConfigurationManager.AppSettings["ConsumerKey"];
@@ -26,20 +29,54 @@ namespace SalesforceIntegration.Services
 
         public SalesforceService(ClaimsIdentity user)
         {
+            // Get the values from the user's claims. These claims are set on the user in the ApplicationUser.GenerateUserIdentityAsync method.
             _accessToken = user.FindFirst(SalesforceClaims.AccessToken).Value;
             _refreshToken = user.FindFirst(SalesforceClaims.RefreshToken).Value;
             _instanceUrl = user.FindFirst(SalesforceClaims.InstanceUrl).Value;
         }
 
+        /// <summary>
+        /// Demonstrates using the refresh token to get a new access token if the access token has expired.
+        /// </summary>
         public async Task<IEnumerable<SalesforceContact>> GetContactsAsync()
         {
-            using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
+            try
+            {
+                // 1) First try with an expired token
+                return await GetContactsAsync(accessToken: "This is an expired token.");
+            }
+            catch (ForceException ex)
+            {
+                // 2) This will throw a ForceException with the message below
+                if (ex.Message == "Session expired or invalid")
+                {
+                    // 3) Get a new access token with the refresh token
+                    var auth = new AuthenticationClient();
+                    await auth.TokenRefreshAsync(_clientId, _refreshToken);
+
+                    // 4) Try again with the new access token
+                    return await GetContactsAsync(auth.AccessToken);
+                }
+
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Demonstrates retrieving data from a client's Salesforce instance using an access token.
+        /// </summary>
+        public async Task<IEnumerable<SalesforceContact>> GetContactsAsync(string accessToken)
+        {
+            using (var client = new ForceClient(_instanceUrl, accessToken, _apiVersion))
             {
                 var contactsResult = await client.QueryAsync<SalesforceContact>("SELECT Id, FirstName, LastName, Email FROM Contact");
                 return contactsResult.Records;
             }
         }
 
+        /// <summary>
+        /// Demonstrates updating a contact Contact in a client's Salesforce instance
+        /// </summary>
         public async Task UpdateContactAsync(SalesforceContact contact)
         {
             var updatedContact = new
@@ -61,6 +98,9 @@ namespace SalesforceIntegration.Services
             }
         }
 
+        /// <summary>
+        /// Demonstrates retrieving Apex trigger code from a client's Salesforce instance.
+        /// </summary>
         public async Task<IEnumerable<WebhookModel>> GetWebhooksAsync()
         {
             var webhookModels = new Collection<WebhookModel>();
@@ -92,6 +132,9 @@ namespace SalesforceIntegration.Services
             await CreateTriggerAsync(webhookModel);
         }
 
+        /// <summary>
+        /// Demonstrates deleting an Apex trigger from a client's Salesforce instance.
+        /// </summary>
         public async Task DeleteWebhookAsync(WebhookModel webhookModel)
         {
             using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
@@ -105,14 +148,9 @@ namespace SalesforceIntegration.Services
             }
         }
 
-        public async Task<string> GetNewAccessTokenAsync(WebhookModel webhookModel)
-        {
-            var auth = new AuthenticationClient();
-            await auth.TokenRefreshAsync(_clientId, _refreshToken);
-
-            return auth.AccessToken;
-        }
-
+        /// <summary>
+        /// Demonstrates creating an Apex trigger in a client's Salesforce instance.
+        /// </summary>
         private async Task CreateTriggerAsync(WebhookModel webhookModel)
         {
             var triggerBody = GetApexCode("SalesforceIntegration.ApexTemplates.TriggerTemplate.txt", webhookModel);
@@ -136,12 +174,17 @@ namespace SalesforceIntegration.Services
             }
         }
 
+        /// <summary>
+        /// Demonstrates creating an Apex class in a client's Salesforce instance.
+        /// </summary>
         private async Task CreateWebhookClassAsync(WebhookModel webhookModel)
         {
             using (var client = new ForceClient(_instanceUrl, _accessToken, _apiVersion))
             {
+                // First check if a class with this name already exists
                 var existingWebhookClass = await client.QueryAsync<ApexClass>("SELECT Id FROM ApexClass WHERE Name = 'ActionRelayWebhook'");
 
+                // If the class does not exist
                 if (!existingWebhookClass.Records.Any())
                 {
                     var classBody = GetApexCode("SalesforceIntegration.ApexTemplates.WebhookTemplate.txt");
@@ -163,6 +206,9 @@ namespace SalesforceIntegration.Services
             }
         }
 
+        /// <summary>
+        /// Demonstrates using RazorEngine to populate a Razor template values from a model.
+        /// </summary>
         private string GetApexCode(string templateName, object model = null)
         {
             var assembly = Assembly.GetExecutingAssembly();
