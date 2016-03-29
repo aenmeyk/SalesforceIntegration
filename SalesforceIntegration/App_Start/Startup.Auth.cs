@@ -48,10 +48,12 @@ namespace SalesforceIntegration
             // This is similar to the RememberMe option when you log in.
             app.UseTwoFactorRememberBrowserCookie(DefaultAuthenticationTypes.TwoFactorRememberBrowserCookie);
 
+            var instanceName = ConfigurationManager.AppSettings["InstanceName"];
+
             var salesforceEndpoints = new SalesforceAuthenticationOptions.SalesforceAuthenticationEndpoints
             {
-                AuthorizationEndpoint = ConfigurationManager.AppSettings["AuthorizationEndpoint"],
-                TokenEndpoint = ConfigurationManager.AppSettings["TokenEndpoint"]
+                AuthorizationEndpoint = string.Format(@"https://{0}.salesforce.com/services/oauth2/authorize", instanceName),
+                TokenEndpoint = string.Format(@"https://{0}.salesforce.com/services/oauth2/token", instanceName)
             };
 
             var options = new SalesforceAuthenticationOptions
